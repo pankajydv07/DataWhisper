@@ -3,9 +3,13 @@ import json
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+load_dotenv(ROOT / ".env")
 
 from backend.llm_client import generate_sql  # noqa: E402
 from backend.semantic_layer import build_semantic_context, load_schema  # noqa: E402
