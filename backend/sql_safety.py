@@ -15,6 +15,7 @@ BLOCKED_KEYWORDS = [
 ]
 
 LIMIT_PATTERN = re.compile(r"\blimit\s+\d+\b", re.IGNORECASE)
+FROM_PATTERN = re.compile(r"\bfrom\b", re.IGNORECASE)
 
 
 def strip_markdown_fences(sql: str) -> str:
@@ -57,6 +58,9 @@ def validate_sql(sql: str, max_rows: int = 100) -> tuple[str, str | None]:
         return cleaned_sql, "Query has unbalanced parentheses."
 
     cleaned_sql = cleaned_sql.rstrip(";").strip()
+
+    if not FROM_PATTERN.search(cleaned_sql):
+        return cleaned_sql, "Query must read from an approved data table."
 
     if not LIMIT_PATTERN.search(cleaned_sql):
         cleaned_sql = f"{cleaned_sql} LIMIT {max_rows}"

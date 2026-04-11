@@ -26,3 +26,8 @@ def test_preserves_existing_limit() -> None:
 def test_rejects_semicolon() -> None:
     _, error = validate_sql("SELECT * FROM orders; SELECT * FROM customers")
     assert error is not None
+
+
+def test_rejects_constant_only_select() -> None:
+    _, error = validate_sql("SELECT 'Hello, user_123' AS greeting")
+    assert error is not None

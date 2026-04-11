@@ -12,6 +12,7 @@ from backend.auth import get_current_user  # noqa: E402
 from backend.cache import cache_get, cache_set, make_key, normalise_question  # noqa: E402
 from backend.conversation import add_turn, get_history_text  # noqa: E402
 from backend.formatter import dataframe_to_records, dataframe_to_table, infer_chart  # noqa: E402
+from backend.intent import is_greeting, looks_like_data_question  # noqa: E402
 from backend.llm_client import correct_sql, generate_sql  # noqa: E402
 from backend.logger import logger  # noqa: E402
 from backend.models import AuthenticatedUser, QueryRequest, QueryResponse  # noqa: E402
@@ -62,6 +63,27 @@ async def query_data(
     try:
         cached = False
         normalized_question = normalise_question(request.question)
+
+        if is_greeting(request.question):
+            return QueryResponse(
+                result_summary=(
+                    "Hi. Ask me a question about your retail data, such as total "
+                    "revenue, top customers, product categories, regions, or cancelled orders."
+                ),
+                suggested_queries=SUGGESTED_QUERIES,
+                execution_time_ms=int((time.perf_counter() - started_at) * 1000),
+            )
+
+        if not looks_like_data_question(request.question):
+            return QueryResponse(
+                error=(
+                    "I can answer questions about your retail sales data. Try asking "
+                    "about revenue, orders, customers, products, regions, or time periods."
+                ),
+                suggested_queries=SUGGESTED_QUERIES[:3],
+                execution_time_ms=int((time.perf_counter() - started_at) * 1000),
+            )
+
         nl_sql_key = make_key(user.user_id, normalized_question)
         sql = None if refresh else cache_get(nl_sql_key)
 
