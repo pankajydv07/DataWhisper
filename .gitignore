@@ -26,3 +26,4 @@ logs/*
 !logs/.gitkeep
 
 backend/tests/eval_results.json
+backend/data/sample_seed.sql

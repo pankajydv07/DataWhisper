@@ -45,7 +45,8 @@ copy .env.example .env
 CLERK_JWKS_URL=https://your-clerk-domain/.well-known/jwks.json
 CLERK_ISSUER=https://your-clerk-domain
 GROQ_API_KEY=gsk_xxx
-SUPABASE_DB_URL=postgresql://...
+SUPABASE_DB_URL=postgresql://postgres.project-ref:password@aws-1-region.pooler.supabase.com:5432/postgres
+SEED_USER_ID=user_xxx
 ```
 
 3. Create frontend environment:
@@ -108,7 +109,9 @@ CREATE TABLE order_items (
 );
 ```
 
-Enable RLS and add read policies for your chosen auth integration. This scaffold also enforces explicit `user_id` scoping server-side because direct service-role database connections can bypass Supabase RLS.
+Use the Supabase Session Pooler connection string if your network is IPv4-only. The direct `db.<project-ref>.supabase.co` host may be IPv6-only and fail DNS or connectivity from local machines.
+
+Enable RLS and add read policies for your chosen auth integration. This scaffold also enforces explicit `user_id` scoping server-side because direct database connections can bypass Supabase RLS depending on role and policy setup.
 
 ## Generate Synthetic Data
 
@@ -116,7 +119,7 @@ Enable RLS and add read policies for your chosen auth integration. This scaffold
 python backend/data/generate_data.py
 ```
 
-The script writes `backend/data/sample_seed.sql`. Set `SEED_USER_ID` to match the Clerk `sub` value you want to test with.
+The script creates the retail tables when missing, replaces rows for `SEED_USER_ID`, inserts Faker data, and writes `backend/data/sample_seed.sql`. Set `SEED_USER_ID` to match the Clerk `sub` value you want to test with.
 
 ## API
 

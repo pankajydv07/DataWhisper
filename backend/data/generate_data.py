@@ -5,7 +5,12 @@ from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+import psycopg
+from dotenv import load_dotenv
 from faker import Faker
+
+ROOT_DIR = Path(__file__).resolve().parents[2]
+load_dotenv(ROOT_DIR / ".env")
 
 fake = Faker("en_IN")
 Faker.seed(42)
@@ -13,6 +18,7 @@ random.seed(42)
 
 USER_ID = os.getenv("SEED_USER_ID", "local-user")
 OUTPUT_PATH = Path(__file__).parent / "sample_seed.sql"
+DATABASE_URL = os.getenv("SUPABASE_DB_URL", "")
 
 CATEGORIES = {
     "Electronics": ["Phones", "Laptops", "Accessories"],
@@ -54,6 +60,102 @@ def insert_statement(table: str, columns: list[str], rows: list[dict[str, object
         + ",\n".join(values)
         + ";\n"
     )
+
+
+def create_schema(connection: psycopg.Connection) -> None:
+    ddl = """
+    CREATE TABLE IF NOT EXISTS customers (
+      customer_id uuid PRIMARY KEY,
+      user_id text NOT NULL,
+      name text NOT NULL,
+      region text NOT NULL,
+      segment text NOT NULL,
+      join_date date NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS products (
+      product_id uuid PRIMARY KEY,
+      user_id text NOT NULL,
+      name text NOT NULL,
+      category text NOT NULL,
+      sub_category text NOT NULL,
+      unit_price numeric NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS orders (
+      order_id uuid PRIMARY KEY,
+      user_id text NOT NULL,
+      customer_id uuid NOT NULL REFERENCES customers(customer_id),
+      order_date date NOT NULL,
+      status text NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS order_items (
+      item_id uuid PRIMARY KEY,
+      order_id uuid NOT NULL REFERENCES orders(order_id),
+      user_id text NOT NULL,
+      product_id uuid NOT NULL REFERENCES products(product_id),
+      quantity integer NOT NULL,
+      discount numeric NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_customers_user_id ON customers(user_id);
+    CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_order_date ON orders(order_date);
+    CREATE INDEX IF NOT EXISTS idx_order_items_user_id ON order_items(user_id);
+    """
+
+    with connection.cursor() as cursor:
+        cursor.execute(ddl)
+
+
+def replace_user_data(
+    connection: psycopg.Connection, user_id: str, data: dict[str, list[dict[str, object]]]
+) -> None:
+    # Delete in dependency order, then insert in parent-first order.
+    with connection.cursor() as cursor:
+        cursor.execute("DELETE FROM order_items WHERE user_id = %s", (user_id,))
+        cursor.execute("DELETE FROM orders WHERE user_id = %s", (user_id,))
+        cursor.execute("DELETE FROM products WHERE user_id = %s", (user_id,))
+        cursor.execute("DELETE FROM customers WHERE user_id = %s", (user_id,))
+
+        cursor.executemany(
+            """
+            INSERT INTO customers
+              (customer_id, user_id, name, region, segment, join_date)
+            VALUES
+              (%(customer_id)s, %(user_id)s, %(name)s, %(region)s, %(segment)s, %(join_date)s)
+            """,
+            data["customers"],
+        )
+        cursor.executemany(
+            """
+            INSERT INTO products
+              (product_id, user_id, name, category, sub_category, unit_price)
+            VALUES
+              (%(product_id)s, %(user_id)s, %(name)s, %(category)s, %(sub_category)s, %(unit_price)s)
+            """,
+            data["products"],
+        )
+        cursor.executemany(
+            """
+            INSERT INTO orders
+              (order_id, user_id, customer_id, order_date, status)
+            VALUES
+              (%(order_id)s, %(user_id)s, %(customer_id)s, %(order_date)s, %(status)s)
+            """,
+            data["orders"],
+        )
+        cursor.executemany(
+            """
+            INSERT INTO order_items
+              (item_id, order_id, user_id, product_id, quantity, discount)
+            VALUES
+              (%(item_id)s, %(order_id)s, %(user_id)s, %(product_id)s, %(quantity)s, %(discount)s)
+            """,
+            data["order_items"],
+        )
 
 
 def build_seed_data() -> dict[str, list[dict[str, object]]]:
@@ -148,8 +250,17 @@ def main() -> None:
         ),
     ]
     OUTPUT_PATH.write_text("\n".join(statements), encoding="utf-8")
+
+    if not DATABASE_URL:
+        raise RuntimeError("SUPABASE_DB_URL is not configured.")
+
+    with psycopg.connect(DATABASE_URL, connect_timeout=15) as connection:
+        create_schema(connection)
+        replace_user_data(connection, USER_ID, data)
+        connection.commit()
+
     print(
-        f"Wrote {OUTPUT_PATH} with "
+        f"Seeded Supabase for user_id={USER_ID!r} and wrote {OUTPUT_PATH} with "
         f"{len(data['customers'])} customers, {len(data['products'])} products, "
         f"{len(data['orders'])} orders, and {len(data['order_items'])} order items."
     )
