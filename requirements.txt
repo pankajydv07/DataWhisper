@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-dotenv
+httpx
+PyJWT
+cryptography
+PyYAML
+pandas
+psycopg[binary]
+faker
+pytest
+sqlparse

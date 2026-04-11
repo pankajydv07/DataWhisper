@@ -1,0 +1,114 @@
+domain: retail_sales
+dialect: postgresql
+currency: INR
+
+tables:
+  - name: customers
+    description: Customer profiles for retail buyers.
+    columns:
+      - name: customer_id
+        type: uuid
+        description: Primary key for each customer.
+      - name: user_id
+        type: text
+        description: Clerk user id that owns this row.
+      - name: name
+        type: text
+        description: Synthetic customer name.
+      - name: region
+        type: text
+        description: Sales region. One of North, South, East, West.
+      - name: segment
+        type: text
+        description: Customer segment. One of Consumer, Corporate, SMB.
+      - name: join_date
+        type: date
+        description: Date the customer joined.
+
+  - name: products
+    description: Product catalogue with price and category metadata.
+    columns:
+      - name: product_id
+        type: uuid
+        description: Primary key for each product.
+      - name: user_id
+        type: text
+        description: Clerk user id that owns this row.
+      - name: name
+        type: text
+        description: Product name.
+      - name: category
+        type: text
+        description: Product category such as Electronics, Clothing, Home, Beauty, Sports.
+      - name: sub_category
+        type: text
+        description: More specific product group.
+      - name: unit_price
+        type: numeric
+        description: Unit selling price in INR.
+
+  - name: orders
+    description: Customer purchase orders.
+    columns:
+      - name: order_id
+        type: uuid
+        description: Primary key for each order.
+      - name: user_id
+        type: text
+        description: Clerk user id that owns this row.
+      - name: customer_id
+        type: uuid
+        description: Customer who placed the order.
+      - name: order_date
+        type: date
+        description: Date the order was placed.
+      - name: status
+        type: text
+        description: Order status. One of pending, completed, cancelled.
+
+  - name: order_items
+    description: Line items contained in each order.
+    columns:
+      - name: item_id
+        type: uuid
+        description: Primary key for each order line.
+      - name: order_id
+        type: uuid
+        description: Parent order id.
+      - name: user_id
+        type: text
+        description: Clerk user id that owns this row.
+      - name: product_id
+        type: uuid
+        description: Product purchased.
+      - name: quantity
+        type: integer
+        description: Units purchased.
+      - name: discount
+        type: numeric
+        description: Discount as a decimal from 0.0 to 1.0.
+
+relationships:
+  - from: orders.customer_id
+    to: customers.customer_id
+  - from: order_items.order_id
+    to: orders.order_id
+  - from: order_items.product_id
+    to: products.product_id
+
+business_terms:
+  revenue: "SUM(order_items.quantity * products.unit_price * (1 - order_items.discount))"
+  sales: "Same as revenue."
+  order_value: "SUM(order_items.quantity * products.unit_price * (1 - order_items.discount))"
+  average_order_value: "Revenue divided by COUNT(DISTINCT orders.order_id)."
+  completed_orders: "orders.status = 'completed'"
+  cancelled_orders: "orders.status = 'cancelled'"
+  pending_orders: "orders.status = 'pending'"
+  top_customers: "Customers ranked by total revenue descending."
+  top_products: "Products ranked by total revenue descending."
+  last_month: "orders.order_date >= date_trunc('month', CURRENT_DATE - INTERVAL '1 month') AND orders.order_date < date_trunc('month', CURRENT_DATE)"
+  this_month: "orders.order_date >= date_trunc('month', CURRENT_DATE)"
+  this_quarter: "orders.order_date >= date_trunc('quarter', CURRENT_DATE)"
+  last_quarter: "orders.order_date >= date_trunc('quarter', CURRENT_DATE - INTERVAL '3 months') AND orders.order_date < date_trunc('quarter', CURRENT_DATE)"
+  q1_2025: "orders.order_date >= DATE '2025-01-01' AND orders.order_date < DATE '2025-04-01'"
+  "2025": "orders.order_date >= DATE '2025-01-01' AND orders.order_date < DATE '2026-01-01'"
