@@ -15,19 +15,51 @@ class TablePayload(BaseModel):
 
 
 class ChartPayload(BaseModel):
-    type: Literal["bar", "line"]
+    type: Literal["bar", "line", "pie", "stacked_bar"]
     x: str
     y: str
+    series: list[str] = Field(default_factory=list)
+
+
+class MetricDefinitionRef(BaseModel):
+    key: str
+    label: str
+    definition: str
+    formula: str | None = None
+    source_tables: list[str] = Field(default_factory=list)
+    default_time_grain: str | None = None
+
+
+class ComparisonPayload(BaseModel):
+    columns: list[str]
+    rows: list[dict[str, Any]]
+    focus: str | None = None
+
+
+QueryIntent = Literal[
+    "change",
+    "compare",
+    "breakdown",
+    "summarize",
+    "general",
+    "clarify",
+]
 
 
 class QueryResponse(BaseModel):
     session_id: str | None = None
     session_title: str | None = None
+    intent: QueryIntent = "general"
     sql: str = ""
     sql_explanation: str = ""
     result_summary: str = ""
     table: TablePayload | None = None
     chart: ChartPayload | None = None
+    comparison: ComparisonPayload | None = None
+    data_sources: list[str] = Field(default_factory=list)
+    metric_definitions: list[MetricDefinitionRef] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    clarification_question: str | None = None
     cached: bool = False
     execution_time_ms: int = 0
     error: str | None = None
@@ -73,3 +105,7 @@ class CreateSessionRequest(BaseModel):
 
 class UpdateSessionRequest(BaseModel):
     title: str = Field(min_length=1, max_length=120)
+
+
+class MetricDictionaryResponse(BaseModel):
+    metrics: list[MetricDefinitionRef]

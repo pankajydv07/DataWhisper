@@ -1,5 +1,7 @@
 import re
 
+from backend.query_executor import extract_data_sources
+
 BLOCKED_KEYWORDS = [
     "DROP",
     "DELETE",
@@ -39,7 +41,11 @@ def has_balanced_parentheses(sql: str) -> bool:
     return depth == 0
 
 
-def validate_sql(sql: str, max_rows: int = 100) -> tuple[str, str | None]:
+def validate_sql(
+    sql: str,
+    max_rows: int = 100,
+    allowed_tables: set[str] | None = None,
+) -> tuple[str, str | None]:
     cleaned_sql = strip_markdown_fences(sql).strip()
 
     if not cleaned_sql.upper().startswith("SELECT"):
@@ -61,6 +67,18 @@ def validate_sql(sql: str, max_rows: int = 100) -> tuple[str, str | None]:
 
     if not FROM_PATTERN.search(cleaned_sql):
         return cleaned_sql, "Query must read from an approved data table."
+
+    if re.search(r"\b(with|union|intersect|except)\b", cleaned_sql, flags=re.IGNORECASE):
+        return cleaned_sql, "Query contains an unsupported SQL pattern."
+
+    referenced_tables = extract_data_sources(cleaned_sql)
+    if not referenced_tables:
+        return cleaned_sql, "Query must read from an approved data table."
+
+    if allowed_tables is not None:
+        unknown_tables = [table for table in referenced_tables if table not in allowed_tables]
+        if unknown_tables:
+            return cleaned_sql, f"Query references unsupported tables: {', '.join(unknown_tables)}"
 
     if not LIMIT_PATTERN.search(cleaned_sql):
         cleaned_sql = f"{cleaned_sql} LIMIT {max_rows}"

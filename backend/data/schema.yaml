@@ -96,6 +96,40 @@ relationships:
   - from: order_items.product_id
     to: products.product_id
 
+metrics:
+  - key: revenue
+    label: Revenue
+    definition: Total completed-order sales after discount.
+    formula: SUM(order_items.quantity * products.unit_price * (1 - order_items.discount))
+    source_tables: [orders, order_items, products]
+    default_time_grain: month
+    allowed_dimensions: [region, category, sub_category, segment, product, customer, order_date]
+    synonyms: [sales, total sales, order value]
+  - key: orders
+    label: Orders
+    definition: Count of distinct orders.
+    formula: COUNT(DISTINCT orders.order_id)
+    source_tables: [orders]
+    default_time_grain: week
+    allowed_dimensions: [region, segment, status, order_date]
+    synonyms: [order count, total orders]
+  - key: cancelled_orders
+    label: Cancelled Orders
+    definition: Count of orders whose status is cancelled.
+    formula: COUNT(DISTINCT CASE WHEN orders.status = 'cancelled' THEN orders.order_id END)
+    source_tables: [orders]
+    default_time_grain: week
+    allowed_dimensions: [region, segment, order_date]
+    synonyms: [cancellations]
+  - key: average_order_value
+    label: Average Order Value
+    definition: Revenue divided by distinct completed orders.
+    formula: SUM(order_items.quantity * products.unit_price * (1 - order_items.discount)) / NULLIF(COUNT(DISTINCT orders.order_id), 0)
+    source_tables: [orders, order_items, products]
+    default_time_grain: month
+    allowed_dimensions: [region, category, segment, order_date]
+    synonyms: [aov]
+
 business_terms:
   revenue: "SUM(order_items.quantity * products.unit_price * (1 - order_items.discount))"
   sales: "Same as revenue."
@@ -108,7 +142,10 @@ business_terms:
   top_products: "Products ranked by total revenue descending."
   last_month: "orders.order_date >= date_trunc('month', CURRENT_DATE - INTERVAL '1 month') AND orders.order_date < date_trunc('month', CURRENT_DATE)"
   this_month: "orders.order_date >= date_trunc('month', CURRENT_DATE)"
+  this_week: "orders.order_date >= date_trunc('week', CURRENT_DATE)"
+  last_week: "orders.order_date >= date_trunc('week', CURRENT_DATE - INTERVAL '7 day') AND orders.order_date < date_trunc('week', CURRENT_DATE)"
   this_quarter: "orders.order_date >= date_trunc('quarter', CURRENT_DATE)"
   last_quarter: "orders.order_date >= date_trunc('quarter', CURRENT_DATE - INTERVAL '3 months') AND orders.order_date < date_trunc('quarter', CURRENT_DATE)"
+  year_to_date: "orders.order_date >= date_trunc('year', CURRENT_DATE)"
   q1_2025: "orders.order_date >= DATE '2025-01-01' AND orders.order_date < DATE '2025-04-01'"
   "2025": "orders.order_date >= DATE '2025-01-01' AND orders.order_date < DATE '2026-01-01'"

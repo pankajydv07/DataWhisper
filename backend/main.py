@@ -11,20 +11,31 @@ load_dotenv()
 from backend.auth import get_current_user  # noqa: E402
 from backend.cache import cache_get, cache_set, make_key, normalise_question  # noqa: E402
 from backend.formatter import dataframe_to_records, dataframe_to_table, infer_chart  # noqa: E402
+from backend.insights import (  # noqa: E402
+    build_comparison_payload,
+    classify_intent,
+    metric_refs_for_question,
+)
 from backend.intent import is_greeting, looks_like_data_question  # noqa: E402
 from backend.llm_client import correct_sql, generate_sql  # noqa: E402
 from backend.logger import logger  # noqa: E402
 from backend.models import (  # noqa: E402
     AuthenticatedUser,
     CreateSessionRequest,
+    MetricDictionaryResponse,
     QueryRequest,
     QueryResponse,
     SessionDetailResponse,
     SessionListResponse,
     UpdateSessionRequest,
 )
-from backend.query_executor import execute_sql  # noqa: E402
-from backend.semantic_layer import build_semantic_context, load_schema  # noqa: E402
+from backend.query_executor import execute_sql, extract_data_sources  # noqa: E402
+from backend.semantic_layer import (  # noqa: E402
+    build_semantic_context,
+    get_allowed_tables,
+    get_metric_definitions,
+    load_schema,
+)
 from backend.session_store import (  # noqa: E402
     append_message,
     create_session,
@@ -36,15 +47,15 @@ from backend.session_store import (  # noqa: E402
     list_sessions,
     rename_session,
 )
-from backend.sql_explainer import explain_sql, summarize_result  # noqa: E402
+from backend.sql_explainer import append_trust_suffix, explain_sql, summarize_result  # noqa: E402
 from backend.sql_safety import validate_sql  # noqa: E402
 
 SUGGESTED_QUERIES = [
-    "What was total revenue last month?",
+    "Why did revenue drop last month?",
+    "Compare North vs South region this month",
+    "Break down sales by category",
+    "Give me a weekly summary for customer metrics",
     "Show top 5 customers by order value",
-    "Which product category has the highest sales?",
-    "Compare revenue by region for 2025",
-    "How many orders were cancelled this quarter?",
 ]
 
 MAX_ROWS = int(os.getenv("MAX_ROWS", "100"))
@@ -63,6 +74,35 @@ app.add_middleware(
 )
 
 
+def build_intent_instructions(intent_info: object) -> str:
+    instructions: list[str] = []
+    current_period = getattr(intent_info, "current_period_label", None)
+    previous_period = getattr(intent_info, "previous_period_label", None)
+    dimension = getattr(intent_info, "dimension", None)
+
+    if current_period:
+        instructions.append(f"Use the current analysis period: {current_period}.")
+    if previous_period:
+        instructions.append(f"Use the prior comparison period: {previous_period}.")
+    if dimension:
+        instructions.append(f"Prefer grouping by {dimension}.")
+
+    intent = getattr(intent_info, "intent", "general")
+    if intent == "change":
+        instructions.append("Return current-period results and include enough detail to explain the biggest drivers.")
+    elif intent == "compare":
+        instructions.append("Return comparison-friendly columns, ideally period or segment with metric values.")
+    elif intent == "breakdown":
+        instructions.append("Return a ranked composition table with one dimension column and one main metric column.")
+    elif intent == "summarize":
+        instructions.append("Return recent trend rows with dates, metrics, and any clear anomalies.")
+
+    assumptions = getattr(intent_info, "assumptions", None) or []
+    if assumptions:
+        instructions.append("Resolved assumptions: " + "; ".join(assumptions))
+    return " ".join(instructions)
+
+
 @app.on_event("startup")
 async def startup() -> None:
     ensure_session_tables()
@@ -71,6 +111,15 @@ async def startup() -> None:
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/metrics", response_model=MetricDictionaryResponse)
+async def get_metrics(
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> MetricDictionaryResponse:
+    del user
+    schema = load_schema()
+    return MetricDictionaryResponse(metrics=get_metric_definitions(schema))
 
 
 @app.get("/api/sessions", response_model=SessionListResponse)
@@ -135,6 +184,7 @@ async def query_data(
     started_at = time.perf_counter()
     schema = load_schema()
     semantic_context = build_semantic_context(schema)
+    allowed_tables = get_allowed_tables(schema)
 
     try:
         cached = False
@@ -146,9 +196,9 @@ async def query_data(
             response = QueryResponse(
                 session_id=session.session_id,
                 session_title=session.title,
+                intent="general",
                 result_summary=(
-                    "Hi. Ask me a question about your retail data, such as total "
-                    "revenue, top customers, product categories, regions, or cancelled orders."
+                    "Ask about changes, comparisons, breakdowns, or summaries in your retail data."
                 ),
                 suggested_queries=SUGGESTED_QUERIES,
                 execution_time_ms=int((time.perf_counter() - started_at) * 1000),
@@ -166,9 +216,12 @@ async def query_data(
             response = QueryResponse(
                 session_id=session.session_id,
                 session_title=session.title,
+                intent="clarify",
                 error=(
-                    "I can answer questions about your retail sales data. Try asking "
-                    "about revenue, orders, customers, products, regions, or time periods."
+                    "I can answer questions about your retail data. Ask about revenue, orders, customers, products, regions, comparisons, or summaries."
+                ),
+                clarification_question=(
+                    "What metric or business area do you want to explore?"
                 ),
                 suggested_queries=SUGGESTED_QUERIES[:3],
                 execution_time_ms=int((time.perf_counter() - started_at) * 1000),
@@ -182,7 +235,38 @@ async def query_data(
             )
             return response
 
-        nl_sql_key = make_key(user.user_id, normalized_question)
+        intent_info = classify_intent(request.question, schema)
+        if intent_info.intent == "clarify":
+            response = QueryResponse(
+                session_id=session.session_id,
+                session_title=session.title,
+                intent="clarify",
+                result_summary="I need one more detail before I answer confidently.",
+                clarification_question=intent_info.clarification_question,
+                assumptions=intent_info.assumptions,
+                suggested_queries=SUGGESTED_QUERIES[:3],
+                execution_time_ms=int((time.perf_counter() - started_at) * 1000),
+            )
+            append_message(
+                user.user_id,
+                session.session_id,
+                "assistant",
+                response.clarification_question or response.result_summary,
+                response,
+            )
+            return response
+
+        cache_identity = "|".join(
+            [
+                normalized_question,
+                intent_info.intent,
+                intent_info.current_period_label or "",
+                intent_info.previous_period_label or "",
+                intent_info.dimension or "",
+            ]
+        )
+
+        nl_sql_key = make_key(user.user_id, cache_identity)
         sql = None if refresh else cache_get(nl_sql_key)
 
         if sql is None:
@@ -191,12 +275,14 @@ async def query_data(
                 user_id=user.user_id,
                 semantic_layer_context=semantic_context,
                 conversation_history=get_history_text(user.user_id, session.session_id),
+                intent=intent_info.intent,
+                intent_instructions=build_intent_instructions(intent_info),
             )
             cache_set(nl_sql_key, sql, CACHE_TTL_NL_SQL)
         else:
             cached = True
 
-        validated_sql, validation_error = validate_sql(sql, MAX_ROWS)
+        validated_sql, validation_error = validate_sql(sql, MAX_ROWS, allowed_tables)
         if validation_error:
             logger.info(
                 "unsafe_sql_blocked user_id=%s question=%s error=%s sql=%s",
@@ -208,7 +294,9 @@ async def query_data(
             response = QueryResponse(
                 session_id=session.session_id,
                 session_title=session.title,
+                intent=intent_info.intent,
                 error="That type of query isn't supported. Try asking a question about your data instead.",
+                assumptions=intent_info.assumptions,
                 suggested_queries=SUGGESTED_QUERIES[:3],
                 execution_time_ms=int((time.perf_counter() - started_at) * 1000),
             )
@@ -221,12 +309,12 @@ async def query_data(
             )
             return response
 
-        results_key = make_key(user.user_id, validated_sql)
+        results_key = make_key(user.user_id, f"{intent_info.intent}|{validated_sql}")
         df = None if refresh else cache_get(results_key)
 
         if df is None:
             try:
-                df = execute_sql(validated_sql, user.user_id)
+                df = execute_sql(validated_sql, user.user_id, allowed_tables)
             except Exception as db_error:
                 corrected_sql_raw = await correct_sql(
                     user_question=request.question,
@@ -236,42 +324,66 @@ async def query_data(
                     semantic_layer_context=semantic_context,
                 )
                 corrected_sql, corrected_error = validate_sql(
-                    corrected_sql_raw, MAX_ROWS
+                    corrected_sql_raw,
+                    MAX_ROWS,
+                    allowed_tables,
                 )
                 if corrected_error:
                     raise db_error
 
                 validated_sql = corrected_sql
-                df = execute_sql(validated_sql, user.user_id)
+                df = execute_sql(validated_sql, user.user_id, allowed_tables)
 
             cache_set(results_key, df, CACHE_TTL_RESULTS)
         else:
             cached = True
 
+        data_sources = extract_data_sources(validated_sql)
+        metric_definitions = metric_refs_for_question(
+            request.question,
+            schema,
+            data_sources,
+        )
         records = dataframe_to_records(df)
         sql_explanation = await explain_sql(validated_sql)
-        result_summary = (
+        raw_summary = (
             "No data matched your query. Try a broader date range or different filter."
             if df.empty
             else await summarize_result(request.question, records)
         )
+        result_summary = append_trust_suffix(
+            raw_summary,
+            data_sources=data_sources,
+            assumptions=intent_info.assumptions,
+        )
+        comparison = (
+            build_comparison_payload(df)
+            if intent_info.intent in {"compare", "change"}
+            else None
+        )
 
         logger.info(
-            "query_success user_id=%s rows=%s cached=%s sql=%s",
+            "query_success user_id=%s rows=%s cached=%s intent=%s sql=%s",
             user.user_id,
             len(df),
             cached,
+            intent_info.intent,
             validated_sql,
         )
 
         response = QueryResponse(
             session_id=session.session_id,
             session_title=session.title,
+            intent=intent_info.intent,
             sql=validated_sql,
             sql_explanation=sql_explanation,
             result_summary=result_summary,
             table=dataframe_to_table(df),
-            chart=infer_chart(df),
+            chart=infer_chart(df, intent_info.intent),
+            comparison=comparison,
+            data_sources=data_sources,
+            metric_definitions=metric_definitions,
+            assumptions=intent_info.assumptions,
             cached=cached,
             execution_time_ms=int((time.perf_counter() - started_at) * 1000),
         )
@@ -294,6 +406,7 @@ async def query_data(
         )
         response = QueryResponse(
             session_id=request.session_id,
+            intent="general",
             error=message,
             suggested_queries=SUGGESTED_QUERIES[:3],
             execution_time_ms=int((time.perf_counter() - started_at) * 1000),
@@ -307,6 +420,7 @@ async def query_data(
         )
         response = QueryResponse(
             session_id=request.session_id,
+            intent="general",
             error="Having trouble reaching the database. Please try again in a moment.",
             suggested_queries=SUGGESTED_QUERIES[:3],
             execution_time_ms=int((time.perf_counter() - started_at) * 1000),

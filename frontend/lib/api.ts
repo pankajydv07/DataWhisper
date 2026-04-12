@@ -1,4 +1,5 @@
 import type {
+  MetricDictionaryResponse,
   QueryResponse,
   SessionDetailResponse,
   SessionListResponse,
@@ -79,4 +80,8 @@ export function deleteSession(token: string, sessionId: string): Promise<{ delet
   return apiFetch<{ deleted: boolean }>(`/api/sessions/${sessionId}`, token, {
     method: "DELETE",
   })
+}
+
+export function getMetrics(token: string): Promise<MetricDictionaryResponse> {
+  return apiFetch<MetricDictionaryResponse>("/api/metrics", token)
 }

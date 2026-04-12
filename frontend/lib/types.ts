@@ -1,11 +1,45 @@
+export type QueryIntent =
+  | "change"
+  | "compare"
+  | "breakdown"
+  | "summarize"
+  | "general"
+  | "clarify"
+
+export interface MetricDefinitionRef {
+  key: string
+  label: string
+  definition: string
+  formula?: string | null
+  source_tables: string[]
+  default_time_grain?: string | null
+}
+
+export interface ComparisonPayload {
+  columns: string[]
+  rows: Record<string, unknown>[]
+  focus?: string | null
+}
+
 export interface QueryResponse {
   session_id?: string | null
   session_title?: string | null
+  intent: QueryIntent
   sql: string
   sql_explanation: string
   result_summary: string
   table: { columns: string[]; rows: unknown[][] } | null
-  chart: { type: "bar" | "line"; x: string; y: string } | null
+  chart: {
+    type: "bar" | "line" | "pie" | "stacked_bar"
+    x: string
+    y: string
+    series: string[]
+  } | null
+  comparison?: ComparisonPayload | null
+  data_sources: string[]
+  metric_definitions: MetricDefinitionRef[]
+  assumptions: string[]
+  clarification_question?: string | null
   cached: boolean
   execution_time_ms: number
   error?: string
@@ -46,4 +80,8 @@ export interface SessionListResponse {
 export interface SessionDetailResponse {
   session: ChatSessionSummary
   messages: StoredMessage[]
+}
+
+export interface MetricDictionaryResponse {
+  metrics: MetricDefinitionRef[]
 }

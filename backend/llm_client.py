@@ -92,12 +92,18 @@ async def generate_sql(
     user_id: str,
     semantic_layer_context: str,
     conversation_history: str,
+    intent: str = "general",
+    intent_instructions: str = "",
 ) -> str:
     user_prompt = NL_TO_SQL_USER_PROMPT.format(
         semantic_layer_context=semantic_layer_context,
         user_id=user_id,
         conversation_history=conversation_history,
-        user_question=question,
+        user_question=(
+            f"Intent: {intent}\n"
+            f"Additional guidance: {intent_instructions or 'None'}\n\n"
+            f"{question}"
+        ),
     )
 
     return await call_groq(

@@ -1,18 +1,20 @@
 "use client"
 
-import { PanelLeft } from "lucide-react"
+import { PanelLeft, Scale } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useAuth, UserButton } from "@clerk/nextjs"
 
 import { ChatInput } from "@/components/ChatInput"
 import { ChatMessage } from "@/components/ChatMessage"
 import { LoadingDots } from "@/components/LoadingDots"
+import { MetricDictionary } from "@/components/MetricDictionary"
 import { MobileSidebar } from "@/components/MobileSidebar"
 import { SessionSidebar } from "@/components/SessionSidebar"
 import { SuggestedQueries } from "@/components/SuggestedQueries"
 import {
   createSession,
   deleteSession,
+  getMetrics,
   getSession,
   listSessions,
   renameSession,
@@ -21,6 +23,7 @@ import {
 import type {
   ChatMessage as ChatMessageType,
   ChatSessionSummary,
+  MetricDefinitionRef,
   StoredMessage,
 } from "@/lib/types"
 
@@ -35,6 +38,8 @@ export default function ChatPage() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
   const [isSendingMessage, setIsSendingMessage] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [dictionaryOpen, setDictionaryOpen] = useState(false)
+  const [metrics, setMetrics] = useState<MetricDefinitionRef[]>([])
 
   useEffect(() => {
     void loadInitialState()
@@ -52,11 +57,16 @@ export default function ChatPage() {
   async function loadInitialState() {
     setIsLoadingSessions(true)
     try {
-      const response = await withToken((token) => listSessions(token))
-      setSessions(response.sessions)
+      const [sessionResponse, metricResponse] = await Promise.all([
+        withToken((token) => listSessions(token)),
+        withToken((token) => getMetrics(token)),
+      ])
 
-      if (response.sessions[0]) {
-        await selectSession(response.sessions[0].session_id)
+      setSessions(sessionResponse.sessions)
+      setMetrics(metricResponse.metrics)
+
+      if (sessionResponse.sessions[0]) {
+        await selectSession(sessionResponse.sessions[0].session_id)
       }
     } finally {
       setIsLoadingSessions(false)
@@ -192,7 +202,10 @@ export default function ChatPage() {
       const assistantMessage: ChatMessageType = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: response.error ?? response.result_summary,
+        content:
+          response.clarification_question ??
+          response.error ??
+          response.result_summary,
         response,
         timestamp: new Date(),
       }
@@ -241,6 +254,12 @@ export default function ChatPage() {
     <main className="min-h-screen overflow-hidden text-stone-50">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[linear-gradient(140deg,rgba(9,17,31,0.96),rgba(18,28,35,0.94)_44%,rgba(11,22,30,0.98)),radial-gradient(circle_at_20%_10%,rgba(216,166,63,0.16),transparent_24rem),radial-gradient(circle_at_84%_12%,rgba(79,111,82,0.18),transparent_22rem)]" />
 
+      <MetricDictionary
+        metrics={metrics}
+        onClose={() => setDictionaryOpen(false)}
+        open={dictionaryOpen}
+      />
+
       <MobileSidebar
         activeSessionId={activeSessionId}
         onClose={() => setSidebarOpen(false)}
@@ -283,7 +302,18 @@ export default function ChatPage() {
                 </h1>
               </div>
             </div>
-            <UserButton />
+
+            <div className="flex items-center gap-3">
+              <button
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-stone-200"
+                onClick={() => setDictionaryOpen(true)}
+                type="button"
+              >
+                <Scale size={16} />
+                Metric dictionary
+              </button>
+              <UserButton />
+            </div>
           </header>
 
           <section className="flex-1 overflow-y-auto px-4 pb-36 pt-6 md:px-8">

@@ -65,3 +65,17 @@ async def summarize_result(user_question: str, rows: list[dict[str, Any]]) -> st
         ],
         max_tokens=400,
     )
+
+
+def append_trust_suffix(
+    summary: str,
+    *,
+    data_sources: list[str],
+    assumptions: list[str],
+) -> str:
+    fragments = [summary.strip()]
+    if data_sources:
+        fragments.append(f"Based on {', '.join(data_sources)}.")
+    if assumptions:
+        fragments.append("Assumptions: " + "; ".join(assumptions) + ".")
+    return " ".join(fragment for fragment in fragments if fragment)

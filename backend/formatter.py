@@ -18,7 +18,7 @@ def dataframe_to_records(df: pd.DataFrame) -> list[dict[str, Any]]:
     return safe_df.to_dict(orient="records")
 
 
-def infer_chart(df: pd.DataFrame) -> ChartPayload | None:
+def infer_chart(df: pd.DataFrame, intent: str = "general") -> ChartPayload | None:
     if df.empty or len(df.columns) < 2:
         return None
 
@@ -35,6 +35,16 @@ def infer_chart(df: pd.DataFrame) -> ChartPayload | None:
 
     x_column = x_candidates[0]
     x_name = str(x_column).lower()
-    chart_type = "line" if "date" in x_name or "month" in x_name else "bar"
+    if intent == "breakdown" and len(df) <= 8:
+        chart_type = "pie"
+    elif intent == "compare" and len(numeric_columns) > 1:
+        chart_type = "stacked_bar"
+    else:
+        chart_type = "line" if "date" in x_name or "month" in x_name or "week" in x_name else "bar"
 
-    return ChartPayload(type=chart_type, x=str(x_column), y=str(y_column))
+    return ChartPayload(
+        type=chart_type,
+        x=str(x_column),
+        y=str(y_column),
+        series=[str(column) for column in numeric_columns[1:3]] if chart_type == "stacked_bar" else [],
+    )
