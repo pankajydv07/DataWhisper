@@ -173,3 +173,32 @@ Evaluation calls Groq and requires `GROQ_API_KEY`:
 ```bash
 python backend/tests/run_eval.py
 ```
+
+## Railway Deployment
+
+Deploy this repo as two Railway services:
+
+1. Backend service
+   - Root directory: repo root
+   - Uses [railway.json](/d:/DataWhisper/railway.json) and [nixpacks.toml](/d:/DataWhisper/nixpacks.toml)
+   - Required env vars:
+     - `CLERK_JWKS_URL`
+     - `CLERK_ISSUER`
+     - `GROQ_API_KEY`
+     - `GROQ_MODEL`
+     - `SUPABASE_DB_URL`
+     - `MAX_ROWS`
+     - `CACHE_TTL_NL_SQL`
+     - `CACHE_TTL_RESULTS`
+     - `DEBUG`
+     - `FRONTEND_ORIGIN`
+
+2. Frontend service
+   - Root directory: `frontend`
+   - Uses [frontend/railway.json](/d:/DataWhisper/frontend/railway.json) and [frontend/nixpacks.toml](/d:/DataWhisper/frontend/nixpacks.toml)
+   - Required env vars:
+     - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+     - `NEXT_PUBLIC_API_URL`
+     - `CLERK_SECRET_KEY`
+
+Set `NEXT_PUBLIC_API_URL` to the deployed Railway backend URL and set backend `FRONTEND_ORIGIN` to the deployed Railway frontend URL.
