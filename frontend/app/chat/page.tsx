@@ -1,22 +1,173 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { PanelLeft } from "lucide-react"
+import { useEffect, useState } from "react"
 import { useAuth, UserButton } from "@clerk/nextjs"
 
 import { ChatInput } from "@/components/ChatInput"
 import { ChatMessage } from "@/components/ChatMessage"
 import { LoadingDots } from "@/components/LoadingDots"
+import { MobileSidebar } from "@/components/MobileSidebar"
+import { SessionSidebar } from "@/components/SessionSidebar"
 import { SuggestedQueries } from "@/components/SuggestedQueries"
-import { submitQuery } from "@/lib/api"
-import type { ChatMessage as ChatMessageType } from "@/lib/types"
+import {
+  createSession,
+  deleteSession,
+  getSession,
+  listSessions,
+  renameSession,
+  submitQuery,
+} from "@/lib/api"
+import type {
+  ChatMessage as ChatMessageType,
+  ChatSessionSummary,
+  StoredMessage,
+} from "@/lib/types"
 
 export default function ChatPage() {
   const { getToken } = useAuth()
-  const [messages, setMessages] = useState<ChatMessageType[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const sessionId = useMemo(() => crypto.randomUUID(), [])
+  const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
+  const [messagesBySessionId, setMessagesBySessionId] = useState<
+    Record<string, ChatMessageType[]>
+  >({})
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  const [isLoadingSessions, setIsLoadingSessions] = useState(true)
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false)
+  const [isSendingMessage, setIsSendingMessage] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  useEffect(() => {
+    void loadInitialState()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function withToken<T>(task: (token: string) => Promise<T>) {
+    const token = await getToken()
+    if (!token) {
+      throw new Error("Missing Clerk token")
+    }
+    return task(token)
+  }
+
+  async function loadInitialState() {
+    setIsLoadingSessions(true)
+    try {
+      const response = await withToken((token) => listSessions(token))
+      setSessions(response.sessions)
+
+      if (response.sessions[0]) {
+        await selectSession(response.sessions[0].session_id)
+      }
+    } finally {
+      setIsLoadingSessions(false)
+    }
+  }
+
+  function mapStoredMessages(messages: StoredMessage[]): ChatMessageType[] {
+    return messages.map((message) => ({
+      id: message.message_id,
+      role: message.role,
+      content: message.content,
+      response: message.response ?? undefined,
+      timestamp: new Date(message.created_at),
+    }))
+  }
+
+  function upsertSession(session: ChatSessionSummary) {
+    setSessions((current) =>
+      [session, ...current.filter((item) => item.session_id !== session.session_id)].sort(
+        (a, b) =>
+          new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
+      )
+    )
+  }
+
+  async function selectSession(sessionId: string) {
+    setActiveSessionId(sessionId)
+
+    if (messagesBySessionId[sessionId]) {
+      return
+    }
+
+    setIsLoadingMessages(true)
+    try {
+      const detail = await withToken((token) => getSession(token, sessionId))
+      setMessagesBySessionId((current) => ({
+        ...current,
+        [sessionId]: mapStoredMessages(detail.messages),
+      }))
+      upsertSession(detail.session)
+    } finally {
+      setIsLoadingMessages(false)
+    }
+  }
+
+  async function handleNewChat() {
+    const detail = await withToken((token) => createSession(token))
+    upsertSession(detail.session)
+    setMessagesBySessionId((current) => ({
+      ...current,
+      [detail.session.session_id]: [],
+    }))
+    setActiveSessionId(detail.session.session_id)
+  }
+
+  async function handleRename(session: ChatSessionSummary) {
+    const nextTitle = window.prompt("Rename chat", session.title)?.trim()
+    if (!nextTitle || nextTitle === session.title) {
+      return
+    }
+
+    const detail = await withToken((token) =>
+      renameSession(token, session.session_id, nextTitle)
+    )
+    upsertSession(detail.session)
+  }
+
+  async function handleDelete(session: ChatSessionSummary) {
+    const confirmed = window.confirm(`Delete "${session.title}"?`)
+    if (!confirmed) {
+      return
+    }
+
+    await withToken((token) => deleteSession(token, session.session_id))
+
+    setSessions((current) =>
+      current.filter((item) => item.session_id !== session.session_id)
+    )
+    setMessagesBySessionId((current) => {
+      const next = { ...current }
+      delete next[session.session_id]
+      return next
+    })
+
+    if (activeSessionId === session.session_id) {
+      const remaining = sessions.filter((item) => item.session_id !== session.session_id)
+      setActiveSessionId(remaining[0]?.session_id ?? null)
+      if (remaining[0]) {
+        await selectSession(remaining[0].session_id)
+      }
+    }
+  }
+
+  async function ensureActiveSession(question: string) {
+    if (activeSessionId) {
+      return activeSessionId
+    }
+
+    const detail = await withToken((token) => createSession(token, question))
+    upsertSession(detail.session)
+    setMessagesBySessionId((current) => ({
+      ...current,
+      [detail.session.session_id]: [],
+    }))
+    setActiveSessionId(detail.session.session_id)
+    return detail.session.session_id
+  }
 
   async function sendQuestion(question: string) {
+    const sessionId = await ensureActiveSession(question)
+
     const userMessage: ChatMessageType = {
       id: crypto.randomUUID(),
       role: "user",
@@ -24,8 +175,11 @@ export default function ChatPage() {
       timestamp: new Date(),
     }
 
-    setMessages((current) => [...current, userMessage])
-    setIsLoading(true)
+    setMessagesBySessionId((current) => ({
+      ...current,
+      [sessionId]: [...(current[sessionId] ?? []), userMessage],
+    }))
+    setIsSendingMessage(true)
 
     try {
       const token = await getToken()
@@ -35,79 +189,132 @@ export default function ChatPage() {
 
       const response = await submitQuery({ question, sessionId, token })
 
-      setMessages((current) => [
+      const assistantMessage: ChatMessageType = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: response.error ?? response.result_summary,
+        response,
+        timestamp: new Date(),
+      }
+
+      setMessagesBySessionId((current) => ({
         ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: response.error ?? response.result_summary,
-          response,
-          timestamp: new Date(),
-        },
-      ])
+        [sessionId]: [...(current[sessionId] ?? []), assistantMessage],
+      }))
+
+      const existing = sessions.find((item) => item.session_id === sessionId)
+      if (existing) {
+        upsertSession({
+          ...existing,
+          title: response.session_title || existing.title,
+          updated_at: new Date().toISOString(),
+          last_message_at: new Date().toISOString(),
+        })
+      }
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
           : "Something went wrong while asking your data."
 
-      setMessages((current) => [
+      setMessagesBySessionId((current) => ({
         ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: message,
-          timestamp: new Date(),
-        },
-      ])
+        [sessionId]: [
+          ...(current[sessionId] ?? []),
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: message,
+            timestamp: new Date(),
+          },
+        ],
+      }))
     } finally {
-      setIsLoading(false)
+      setIsSendingMessage(false)
     }
   }
 
+  const activeSession = sessions.find((session) => session.session_id === activeSessionId)
+  const activeMessages = activeSessionId ? messagesBySessionId[activeSessionId] ?? [] : []
+
   return (
     <main className="min-h-screen overflow-hidden text-stone-50">
-      <div className="pointer-events-none fixed inset-0 -z-10 bg-[linear-gradient(140deg,rgba(9,17,31,0.96),rgba(22,35,43,0.94)_45%,rgba(12,23,32,0.98)),radial-gradient(circle_at_18%_14%,rgba(216,166,63,0.22),transparent_24rem),radial-gradient(circle_at_82%_8%,rgba(79,111,82,0.24),transparent_22rem)]" />
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[linear-gradient(140deg,rgba(9,17,31,0.96),rgba(18,28,35,0.94)_44%,rgba(11,22,30,0.98)),radial-gradient(circle_at_20%_10%,rgba(216,166,63,0.16),transparent_24rem),radial-gradient(circle_at_84%_12%,rgba(79,111,82,0.18),transparent_22rem)]" />
 
-      <header className="mx-auto flex max-w-7xl items-center justify-between px-5 py-5 md:px-8">
-        <div>
-          <p className="text-xs uppercase tracking-[0.36em] text-brass">
-            DataWhisper
-          </p>
-          <h1 className="font-display text-3xl text-stone-100 md:text-5xl">
-            Ask the warehouse.
-          </h1>
+      <MobileSidebar
+        activeSessionId={activeSessionId}
+        onClose={() => setSidebarOpen(false)}
+        onDelete={handleDelete}
+        onNewChat={() => void handleNewChat()}
+        onRename={handleRename}
+        onSelect={(sessionId) => void selectSession(sessionId)}
+        open={sidebarOpen}
+        sessions={sessions}
+      />
+
+      <div className="grid min-h-screen md:grid-cols-[19rem_1fr]">
+        <div className="hidden md:block">
+          <SessionSidebar
+            activeSessionId={activeSessionId}
+            onDelete={handleDelete}
+            onNewChat={() => void handleNewChat()}
+            onRename={handleRename}
+            onSelect={(sessionId) => void selectSession(sessionId)}
+            sessions={sessions}
+          />
         </div>
-        <UserButton />
-      </header>
 
-      <section className="mx-auto grid max-w-7xl gap-6 px-5 pb-36 md:grid-cols-[18rem_1fr] md:px-8">
-        <aside className="hidden border-r border-white/10 pr-6 text-sm text-stone-300 md:block">
-          <p className="font-medium text-stone-100">Retail Sales</p>
-          <p className="mt-2 leading-6 text-stone-400">
-            Natural language questions become scoped PostgreSQL queries,
-            summaries, tables, and chart-ready responses.
-          </p>
-          <div className="mt-8 space-y-3 text-xs uppercase tracking-[0.28em] text-stone-500">
-            <p>Clerk JWT</p>
-            <p>Groq SQL</p>
-            <p>Supabase RLS</p>
+        <section className="flex min-h-screen flex-col">
+          <header className="flex items-center justify-between border-b border-white/10 px-4 py-4 md:px-8">
+            <div className="flex items-center gap-3">
+              <button
+                className="rounded-xl border border-white/10 p-2 md:hidden"
+                onClick={() => setSidebarOpen(true)}
+                type="button"
+              >
+                <PanelLeft size={18} />
+              </button>
+              <div>
+                <p className="text-xs uppercase tracking-[0.34em] text-brass">
+                  DataWhisper
+                </p>
+                <h1 className="font-display text-2xl text-stone-100 md:text-4xl">
+                  {activeSession?.title ?? "Chat"}
+                </h1>
+              </div>
+            </div>
+            <UserButton />
+          </header>
+
+          <section className="flex-1 overflow-y-auto px-4 pb-36 pt-6 md:px-8">
+            <div className="mx-auto flex max-w-5xl flex-col gap-4">
+              {isLoadingSessions || isLoadingMessages ? <LoadingDots /> : null}
+
+              {!activeSession && !isLoadingSessions ? (
+                <SuggestedQueries onSelect={(query) => void sendQuestion(query)} />
+              ) : null}
+
+              {activeSession && activeMessages.length === 0 && !isLoadingMessages ? (
+                <SuggestedQueries onSelect={(query) => void sendQuestion(query)} />
+              ) : null}
+
+              {activeMessages.map((message) => (
+                <ChatMessage key={message.id} message={message} />
+              ))}
+
+              {isSendingMessage ? <LoadingDots /> : null}
+            </div>
+          </section>
+
+          <div className="fixed inset-x-0 bottom-0 border-t border-white/10 bg-ink/90 p-4 backdrop-blur-xl md:left-[19rem]">
+            <div className="mx-auto max-w-5xl">
+              <ChatInput
+                disabled={isSendingMessage}
+                onSend={(question) => void sendQuestion(question)}
+              />
+            </div>
           </div>
-        </aside>
-
-        <section className="flex min-h-[calc(100vh-12rem)] flex-col gap-4">
-          {messages.length === 0 && <SuggestedQueries onSelect={sendQuestion} />}
-          {messages.map((message) => (
-            <ChatMessage key={message.id} message={message} />
-          ))}
-          {isLoading && <LoadingDots />}
         </section>
-      </section>
-
-      <div className="fixed inset-x-0 bottom-0 border-t border-white/10 bg-ink/90 p-4 backdrop-blur-xl">
-        <div className="mx-auto max-w-4xl">
-          <ChatInput disabled={isLoading} onSend={sendQuestion} />
-        </div>
       </div>
     </main>
   )

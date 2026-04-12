@@ -3,21 +3,39 @@ import time
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
 from backend.auth import get_current_user  # noqa: E402
 from backend.cache import cache_get, cache_set, make_key, normalise_question  # noqa: E402
-from backend.conversation import add_turn, get_history_text  # noqa: E402
 from backend.formatter import dataframe_to_records, dataframe_to_table, infer_chart  # noqa: E402
 from backend.intent import is_greeting, looks_like_data_question  # noqa: E402
 from backend.llm_client import correct_sql, generate_sql  # noqa: E402
 from backend.logger import logger  # noqa: E402
-from backend.models import AuthenticatedUser, QueryRequest, QueryResponse  # noqa: E402
+from backend.models import (  # noqa: E402
+    AuthenticatedUser,
+    CreateSessionRequest,
+    QueryRequest,
+    QueryResponse,
+    SessionDetailResponse,
+    SessionListResponse,
+    UpdateSessionRequest,
+)
 from backend.query_executor import execute_sql  # noqa: E402
 from backend.semantic_layer import build_semantic_context, load_schema  # noqa: E402
+from backend.session_store import (  # noqa: E402
+    append_message,
+    create_session,
+    delete_session,
+    ensure_session,
+    ensure_session_tables,
+    get_history_text,
+    get_session_detail,
+    list_sessions,
+    rename_session,
+)
 from backend.sql_explainer import explain_sql, summarize_result  # noqa: E402
 from backend.sql_safety import validate_sql  # noqa: E402
 
@@ -45,9 +63,67 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+async def startup() -> None:
+    ensure_session_tables()
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/sessions", response_model=SessionListResponse)
+async def get_sessions(
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> SessionListResponse:
+    return SessionListResponse(sessions=list_sessions(user.user_id))
+
+
+@app.get("/api/sessions/{session_id}", response_model=SessionDetailResponse)
+async def get_session(
+    session_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> SessionDetailResponse:
+    detail = get_session_detail(user.user_id, session_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    return detail
+
+
+@app.post("/api/sessions", response_model=SessionDetailResponse)
+async def post_session(
+    request: CreateSessionRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> SessionDetailResponse:
+    session = create_session(user.user_id, request.title)
+    return SessionDetailResponse(session=session, messages=[])
+
+
+@app.patch("/api/sessions/{session_id}", response_model=SessionDetailResponse)
+async def patch_session(
+    session_id: str,
+    request: UpdateSessionRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> SessionDetailResponse:
+    session = rename_session(user.user_id, session_id, request.title)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    detail = get_session_detail(user.user_id, session_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    return detail
+
+
+@app.delete("/api/sessions/{session_id}")
+async def remove_session(
+    session_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> dict[str, bool]:
+    deleted = delete_session(user.user_id, session_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    return {"deleted": True}
 
 
 @app.post("/api/query", response_model=QueryResponse)
@@ -63,9 +139,13 @@ async def query_data(
     try:
         cached = False
         normalized_question = normalise_question(request.question)
+        session = ensure_session(user.user_id, request.session_id, request.question)
+        append_message(user.user_id, session.session_id, "user", request.question)
 
         if is_greeting(request.question):
-            return QueryResponse(
+            response = QueryResponse(
+                session_id=session.session_id,
+                session_title=session.title,
                 result_summary=(
                     "Hi. Ask me a question about your retail data, such as total "
                     "revenue, top customers, product categories, regions, or cancelled orders."
@@ -73,9 +153,19 @@ async def query_data(
                 suggested_queries=SUGGESTED_QUERIES,
                 execution_time_ms=int((time.perf_counter() - started_at) * 1000),
             )
+            append_message(
+                user.user_id,
+                session.session_id,
+                "assistant",
+                response.result_summary,
+                response,
+            )
+            return response
 
         if not looks_like_data_question(request.question):
-            return QueryResponse(
+            response = QueryResponse(
+                session_id=session.session_id,
+                session_title=session.title,
                 error=(
                     "I can answer questions about your retail sales data. Try asking "
                     "about revenue, orders, customers, products, regions, or time periods."
@@ -83,6 +173,14 @@ async def query_data(
                 suggested_queries=SUGGESTED_QUERIES[:3],
                 execution_time_ms=int((time.perf_counter() - started_at) * 1000),
             )
+            append_message(
+                user.user_id,
+                session.session_id,
+                "assistant",
+                response.error or "",
+                response,
+            )
+            return response
 
         nl_sql_key = make_key(user.user_id, normalized_question)
         sql = None if refresh else cache_get(nl_sql_key)
@@ -92,7 +190,7 @@ async def query_data(
                 question=request.question,
                 user_id=user.user_id,
                 semantic_layer_context=semantic_context,
-                conversation_history=get_history_text(user.user_id, request.session_id),
+                conversation_history=get_history_text(user.user_id, session.session_id),
             )
             cache_set(nl_sql_key, sql, CACHE_TTL_NL_SQL)
         else:
@@ -107,11 +205,21 @@ async def query_data(
                 validation_error,
                 sql,
             )
-            return QueryResponse(
+            response = QueryResponse(
+                session_id=session.session_id,
+                session_title=session.title,
                 error="That type of query isn't supported. Try asking a question about your data instead.",
                 suggested_queries=SUGGESTED_QUERIES[:3],
                 execution_time_ms=int((time.perf_counter() - started_at) * 1000),
             )
+            append_message(
+                user.user_id,
+                session.session_id,
+                "assistant",
+                response.error or "",
+                response,
+            )
+            return response
 
         results_key = make_key(user.user_id, validated_sql)
         df = None if refresh else cache_get(results_key)
@@ -148,8 +256,6 @@ async def query_data(
             else await summarize_result(request.question, records)
         )
 
-        add_turn(user.user_id, request.session_id, request.question, validated_sql)
-
         logger.info(
             "query_success user_id=%s rows=%s cached=%s sql=%s",
             user.user_id,
@@ -158,7 +264,9 @@ async def query_data(
             validated_sql,
         )
 
-        return QueryResponse(
+        response = QueryResponse(
+            session_id=session.session_id,
+            session_title=session.title,
             sql=validated_sql,
             sql_explanation=sql_explanation,
             result_summary=result_summary,
@@ -167,6 +275,14 @@ async def query_data(
             cached=cached,
             execution_time_ms=int((time.perf_counter() - started_at) * 1000),
         )
+        append_message(
+            user.user_id,
+            session.session_id,
+            "assistant",
+            response.error or response.result_summary,
+            response,
+        )
+        return response
 
     except httpx.HTTPStatusError as error:
         logger.exception("groq_http_error user_id=%s", user.user_id)
@@ -176,18 +292,30 @@ async def query_data(
             if status_code == 429
             else "I couldn't quite understand that. Try rephrasing your question."
         )
-        return QueryResponse(
+        response = QueryResponse(
+            session_id=request.session_id,
             error=message,
             suggested_queries=SUGGESTED_QUERIES[:3],
             execution_time_ms=int((time.perf_counter() - started_at) * 1000),
         )
+        append_message(user.user_id, request.session_id, "assistant", message, response)
+        return response
 
     except Exception:
         logger.exception(
             "query_error user_id=%s question=%s", user.user_id, request.question
         )
-        return QueryResponse(
+        response = QueryResponse(
+            session_id=request.session_id,
             error="Having trouble reaching the database. Please try again in a moment.",
             suggested_queries=SUGGESTED_QUERIES[:3],
             execution_time_ms=int((time.perf_counter() - started_at) * 1000),
         )
+        append_message(
+            user.user_id,
+            request.session_id,
+            "assistant",
+            response.error or "",
+            response,
+        )
+        return response
