@@ -1,21 +1,16 @@
-import os
 import uuid
 from typing import Any, Iterable
 
-import psycopg
-from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from backend.db import connect_dict
 from backend.models import ChatSession, QueryResponse, SessionDetailResponse, StoredChatMessage
 
-DATABASE_URL = os.getenv("SUPABASE_DB_URL", "")
 DEFAULT_SESSION_TITLE = "New chat"
 
 
-def get_connection() -> psycopg.Connection:
-    if not DATABASE_URL:
-        raise RuntimeError("SUPABASE_DB_URL is not configured.")
-    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+def get_connection():
+    return connect_dict()
 
 
 def ensure_session_tables() -> None:

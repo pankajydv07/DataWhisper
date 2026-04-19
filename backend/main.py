@@ -2,6 +2,7 @@ import os
 import time
 
 import httpx
+import psycopg
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -414,6 +415,55 @@ async def query_data(
         append_message(user.user_id, request.session_id, "assistant", message, response)
         return response
 
+    except psycopg.OperationalError:
+        logger.exception(
+            "database_connection_error user_id=%s question=%s",
+            user.user_id,
+            request.question,
+        )
+        response = QueryResponse(
+            session_id=request.session_id,
+            intent="general",
+            error="Database connection failed. Check the deployed SUPABASE_DB_URL and SSL settings, then try again.",
+            suggested_queries=SUGGESTED_QUERIES[:3],
+            execution_time_ms=int((time.perf_counter() - started_at) * 1000),
+        )
+        append_message(
+            user.user_id,
+            request.session_id,
+            "assistant",
+            response.error or "",
+            response,
+        )
+        return response
+
+    except psycopg.Error as error:
+        logger.exception(
+            "database_query_error user_id=%s question=%s",
+            user.user_id,
+            request.question,
+        )
+        message = (
+            "Database tables are missing in the deployed environment. Seed the retail demo tables, then try again."
+            if getattr(error, "sqlstate", None) == "42P01"
+            else "The database rejected the query. Check the backend logs for the exact Postgres error and try again."
+        )
+        response = QueryResponse(
+            session_id=request.session_id,
+            intent="general",
+            error=message,
+            suggested_queries=SUGGESTED_QUERIES[:3],
+            execution_time_ms=int((time.perf_counter() - started_at) * 1000),
+        )
+        append_message(
+            user.user_id,
+            request.session_id,
+            "assistant",
+            response.error or "",
+            response,
+        )
+        return response
+
     except Exception:
         logger.exception(
             "query_error user_id=%s question=%s", user.user_id, request.question
@@ -421,7 +471,7 @@ async def query_data(
         response = QueryResponse(
             session_id=request.session_id,
             intent="general",
-            error="Having trouble reaching the database. Please try again in a moment.",
+            error="The request failed before a result was returned. Check the backend logs for the exact cause and try again.",
             suggested_queries=SUGGESTED_QUERIES[:3],
             execution_time_ms=int((time.perf_counter() - started_at) * 1000),
         )

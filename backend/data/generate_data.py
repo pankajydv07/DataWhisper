@@ -9,6 +9,8 @@ import psycopg
 from dotenv import load_dotenv
 from faker import Faker
 
+from backend.db import connect, get_database_url
+
 ROOT_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(ROOT_DIR / ".env")
 
@@ -18,7 +20,6 @@ random.seed(42)
 
 USER_ID = os.getenv("SEED_USER_ID", "local-user")
 OUTPUT_PATH = Path(__file__).parent / "sample_seed.sql"
-DATABASE_URL = os.getenv("SUPABASE_DB_URL", "")
 
 CATEGORIES = {
     "Electronics": ["Phones", "Laptops", "Accessories"],
@@ -251,10 +252,9 @@ def main() -> None:
     ]
     OUTPUT_PATH.write_text("\n".join(statements), encoding="utf-8")
 
-    if not DATABASE_URL:
-        raise RuntimeError("SUPABASE_DB_URL is not configured.")
+    get_database_url()
 
-    with psycopg.connect(DATABASE_URL, connect_timeout=15) as connection:
+    with connect(connect_timeout=15) as connection:
         create_schema(connection)
         replace_user_data(connection, USER_ID, data)
         connection.commit()
