@@ -22,9 +22,9 @@ export function SessionSidebar({
   onDelete: (session: ChatSessionSummary) => void
 }) {
   return (
-    <aside className="flex h-full flex-col border-r border-white/10 bg-black/12 px-3 py-4 backdrop-blur-xl">
+    <aside className="flex h-full flex-col border-r border-line bg-black/[0.16] px-3 py-4 backdrop-blur-xl">
       <button
-        className="mb-5 flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-medium text-stone-100 transition hover:bg-white/[0.08]"
+        className="mb-5 flex items-center justify-center gap-2 rounded-full border border-line bg-paper/[0.035] px-4 py-3 text-sm font-medium text-paper transition hover:border-brass/40 hover:bg-paper/[0.07]"
         onClick={onNewChat}
         type="button"
       >
@@ -33,9 +33,12 @@ export function SessionSidebar({
       </button>
 
       <div className="mb-5 px-3">
-        <p className="text-xs uppercase tracking-[0.34em] text-brass">DataWhisper</p>
-        <p className="mt-2 text-sm leading-6 text-stone-400">
-          Persistent retail analytics conversations, grouped by time.
+        <p className="font-display text-2xl tracking-tight text-paper">DataWhisper</p>
+        <p className="mt-2 text-xs uppercase leading-5 tracking-[0.22em] text-brass">
+          Retail analytics desk
+        </p>
+        <p className="mt-3 text-sm leading-6 text-paper-muted">
+          Persistent conversations grouped by recency.
         </p>
       </div>
 

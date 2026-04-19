@@ -11,7 +11,7 @@ pytest-cache-files-*/
 .ruff_cache/
 .venv/
 venv/
-
+.agent/
 node_modules/
 .next/
 out/

@@ -14,19 +14,21 @@ export function ChatMessage({ message }: { message: ChatMessageType }) {
   return (
     <article
       className={`animate-rise ${
-        isUser ? "ml-auto max-w-3xl" : "mr-auto w-full max-w-5xl"
+        isUser ? "ml-auto max-w-3xl" : "mr-auto w-full max-w-6xl"
       }`}
     >
       <div
         className={
           isUser
-            ? "rounded-[1.4rem] bg-brass px-5 py-4 text-ink"
-            : "rounded-[1.4rem] border border-white/10 bg-white/[0.055] p-5 text-stone-100 backdrop-blur"
+            ? "rounded-[1.35rem] bg-brass px-5 py-4 text-ink shadow-[0_18px_55px_rgba(216,166,63,0.16)]"
+            : "border-y border-line bg-paper/[0.025] px-0 py-6 text-paper backdrop-blur md:px-6"
         }
       >
-        <div className="flex items-start justify-between gap-4">
-          <p className="leading-7">{message.content}</p>
-          <time className="shrink-0 text-xs opacity-50">
+        <div className="flex items-start justify-between gap-5">
+          <p className={`leading-7 ${isUser ? "" : "text-xl md:text-2xl"}`}>
+            {message.content}
+          </p>
+          <time className="shrink-0 text-xs opacity-55">
             {message.timestamp.toLocaleTimeString([], {
               hour: "2-digit",
               minute: "2-digit",
@@ -35,7 +37,7 @@ export function ChatMessage({ message }: { message: ChatMessageType }) {
         </div>
 
         {!isUser && response ? (
-          <div className="mt-4 flex flex-wrap items-center gap-2">
+          <div className="mt-5 flex flex-wrap items-center gap-2 border-y border-line py-3">
             <InsightBadge intent={response.intent} />
             <Pill>{response.execution_time_ms} ms</Pill>
             {response.cached ? <Pill>Cached</Pill> : null}
@@ -44,16 +46,16 @@ export function ChatMessage({ message }: { message: ChatMessageType }) {
         ) : null}
 
         {response?.clarification_question ? (
-          <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm text-amber-100">
+          <div className="mt-5 border-l border-warning bg-warning/10 px-4 py-3 text-sm text-paper">
             {response.clarification_question}
           </div>
         ) : null}
 
         {response?.metric_definitions.length ? (
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-5 flex flex-wrap gap-2">
             {response.metric_definitions.map((metric) => (
               <span
-                className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-stone-200"
+                className="rounded-full border border-line bg-paper/[0.04] px-3 py-1 text-xs text-paper-muted transition hover:border-brass/40 hover:text-paper"
                 key={metric.key}
                 title={metric.formula ?? metric.definition}
               >
@@ -64,9 +66,9 @@ export function ChatMessage({ message }: { message: ChatMessageType }) {
         ) : null}
 
         {response?.assumptions.length ? (
-          <div className="mt-4 rounded-2xl border border-white/10 bg-black/15 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-stone-400">Assumptions</p>
-            <ul className="mt-2 space-y-2 text-sm text-stone-300">
+          <div className="mt-5 border-l border-line bg-black/[0.15] px-4 py-3">
+            <p className="text-xs uppercase tracking-[0.22em] text-paper-muted">Assumptions</p>
+            <ul className="mt-2 space-y-2 text-sm text-paper-muted">
               {response.assumptions.map((assumption) => (
                 <li key={assumption}>{assumption}</li>
               ))}
@@ -77,10 +79,10 @@ export function ChatMessage({ message }: { message: ChatMessageType }) {
         {response?.comparison ? <ComparisonView comparison={response.comparison} /> : null}
 
         {response?.suggested_queries?.length ? (
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-5 flex flex-wrap gap-2">
             {response.suggested_queries.map((query) => (
               <span
-                className="rounded-full border border-white/10 px-3 py-1 text-xs text-stone-300"
+                className="rounded-full border border-line px-3 py-1 text-xs text-paper-muted"
                 key={query}
               >
                 {query}
@@ -105,7 +107,7 @@ export function ChatMessage({ message }: { message: ChatMessageType }) {
 
 function Pill({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded-full border border-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-stone-300">
+    <span className="rounded-full border border-line px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-paper-muted">
       {children}
     </span>
   )

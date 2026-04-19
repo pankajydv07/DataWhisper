@@ -19,8 +19,10 @@ export function SessionListItem({
 }) {
   return (
     <div
-      className={`group flex items-center gap-2 rounded-2xl px-3 py-2 transition ${
-        active ? "bg-white/[0.08]" : "hover:bg-white/[0.04]"
+      className={`group flex items-center gap-2 border-l px-3 py-2 transition ${
+        active
+          ? "border-brass bg-paper/[0.06]"
+          : "border-transparent hover:border-line hover:bg-paper/[0.03]"
       }`}
     >
       <button
@@ -28,21 +30,21 @@ export function SessionListItem({
         onClick={() => onSelect(session.session_id)}
         type="button"
       >
-        <p className="truncate text-sm text-stone-100">{session.title}</p>
+        <p className="truncate text-sm text-paper">{session.title}</p>
       </button>
       <button
         className="opacity-0 transition group-hover:opacity-100"
         onClick={() => onRename(session)}
         type="button"
       >
-        <Pencil className="text-stone-500 hover:text-stone-200" size={14} />
+        <Pencil className="text-paper-muted/60 hover:text-paper" size={14} />
       </button>
       <button
         className="opacity-0 transition group-hover:opacity-100"
         onClick={() => onDelete(session)}
         type="button"
       >
-        <Trash2 className="text-stone-500 hover:text-stone-200" size={14} />
+        <Trash2 className="text-paper-muted/60 hover:text-danger" size={14} />
       </button>
     </div>
   )

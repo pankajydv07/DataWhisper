@@ -9,7 +9,22 @@ ALIAS_PATTERN = re.compile(
     r"\b(?:from|join)\s+([a-zA-Z_][\w]*)(?:\s+(?:as\s+)?([a-zA-Z_][\w]*))?",
     re.IGNORECASE,
 )
-CLAUSE_KEYWORDS = ("where", "order by", "limit")
+RESERVED_ALIAS_KEYWORDS = {
+    "as",
+    "cross",
+    "full",
+    "group",
+    "having",
+    "inner",
+    "join",
+    "left",
+    "limit",
+    "on",
+    "order",
+    "outer",
+    "right",
+    "where",
+}
 
 
 def extract_data_sources(sql: str) -> list[str]:
@@ -26,7 +41,7 @@ def _extract_table_aliases(sql: str) -> dict[str, str]:
     for match in ALIAS_PATTERN.finditer(sql):
         table_name = match.group(1)
         alias = match.group(2) or table_name
-        if alias.lower() == "on":
+        if alias.lower() in RESERVED_ALIAS_KEYWORDS:
             alias = table_name
         aliases[alias] = table_name
     return aliases
@@ -80,7 +95,7 @@ def _find_top_level_clause(sql: str, clause: str, start: int = 0) -> int:
 def _find_scope_insert_position(sql: str) -> int:
     positions = [
         position
-        for clause in ("order by", "limit")
+        for clause in ("group by", "having", "order by", "limit")
         if (position := _find_top_level_clause(sql, clause)) >= 0
     ]
     return min(positions) if positions else len(sql)

@@ -4,8 +4,27 @@
 
 :root {
   color-scheme: dark;
-  --background: #09111f;
-  --foreground: #f5f2ea;
+  --ink: #060b12;
+  --ink-soft: #0b141f;
+  --paper: #f6f0df;
+  --paper-muted: #c8bdab;
+  --brass: #d8a63f;
+  --brass-soft: #f0c766;
+  --moss: #566f52;
+  --line: rgba(246, 240, 223, 0.12);
+  --danger: #ef8f7a;
+  --warning: #f1c76a;
+  --ink-rgb: 6 11 18;
+  --ink-soft-rgb: 11 20 31;
+  --paper-rgb: 246 240 223;
+  --paper-muted-rgb: 200 189 171;
+  --brass-rgb: 216 166 63;
+  --brass-soft-rgb: 240 199 102;
+  --moss-rgb: 86 111 82;
+  --danger-rgb: 239 143 122;
+  --warning-rgb: 241 199 106;
+  --background: var(--ink);
+  --foreground: var(--paper);
 }
 
 * {
@@ -14,20 +33,42 @@
 
 html {
   min-height: 100%;
+  scroll-behavior: smooth;
 }
 
 body {
   min-height: 100%;
   margin: 0;
   background:
-    radial-gradient(circle at 18% 8%, rgba(216, 166, 63, 0.18), transparent 30rem),
-    radial-gradient(circle at 82% 18%, rgba(79, 111, 82, 0.18), transparent 26rem),
+    radial-gradient(circle at 18% 8%, rgba(216, 166, 63, 0.15), transparent 29rem),
+    radial-gradient(circle at 82% 18%, rgba(86, 111, 82, 0.17), transparent 28rem),
+    linear-gradient(135deg, rgba(6, 11, 18, 0.98), rgba(11, 20, 31, 0.98) 48%, rgba(6, 11, 18, 0.99)),
     var(--background);
   color: var(--foreground);
-  font-family: "Space Grotesk", Aptos, "Segoe UI", sans-serif;
+  font-family: "Space Grotesk", "Aptos", "Segoe UI", sans-serif;
+  text-rendering: geometricPrecision;
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: rgba(216, 166, 63, 0.35);
+  color: var(--paper);
+}
+
+.grain-overlay {
+  background-image:
+    linear-gradient(rgba(246, 240, 223, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(246, 240, 223, 0.03) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(to bottom, black, transparent 78%);
 }

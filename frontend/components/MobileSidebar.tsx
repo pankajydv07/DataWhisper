@@ -30,11 +30,11 @@ export function MobileSidebar({
   }
 
   return (
-    <div className="fixed inset-0 z-40 bg-black/55 backdrop-blur-sm md:hidden">
-      <div className="absolute inset-y-0 left-0 w-[20rem] bg-ink shadow-2xl">
+    <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden">
+      <div className="absolute inset-y-0 left-0 w-[20rem] max-w-[86vw] bg-ink shadow-2xl">
         <div className="flex justify-end p-3">
           <button onClick={onClose} type="button">
-            <X className="text-stone-300" size={18} />
+            <X className="text-paper-muted" size={18} />
           </button>
         </div>
         <SessionSidebar

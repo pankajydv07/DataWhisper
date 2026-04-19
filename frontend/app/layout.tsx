@@ -5,7 +5,7 @@ import "./globals.css"
 
 export const metadata: Metadata = {
   title: "DataWhisper",
-  description: "Ask natural language questions and get SQL-backed answers.",
+  description: "Ask governed retail data questions and get SQL-backed answers.",
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

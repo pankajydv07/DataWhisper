@@ -11,7 +11,7 @@ const LABELS: Record<QueryIntent, string> = {
 
 export function InsightBadge({ intent }: { intent: QueryIntent }) {
   return (
-    <span className="rounded-full border border-brass/35 bg-brass/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-brass">
+    <span className="rounded-full border border-brass/[0.35] bg-brass/10 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-brass">
       {LABELS[intent]}
     </span>
   )

@@ -13,9 +13,9 @@ export function SqlBlock({
   const [open, setOpen] = useState(false)
 
   return (
-    <section className="mt-4 rounded-2xl border border-white/10 bg-ink/70">
+    <section className="mt-5 border border-line bg-ink-soft/[0.72]">
       <button
-        className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium text-stone-200"
+        className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium text-paper"
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
@@ -26,12 +26,12 @@ export function SqlBlock({
         />
       </button>
       {open ? (
-        <pre className="overflow-x-auto border-t border-white/10 px-4 py-3 text-xs leading-6 text-brass">
+        <pre className="overflow-x-auto border-t border-line px-4 py-3 text-xs leading-6 text-brass">
           {sql}
         </pre>
       ) : null}
       {explanation ? (
-        <p className="border-t border-white/10 px-4 py-3 text-sm leading-6 text-stone-300">
+        <p className="border-t border-line px-4 py-3 text-sm leading-6 text-paper-muted">
           {explanation}
         </p>
       ) : null}

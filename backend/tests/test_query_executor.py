@@ -53,3 +53,25 @@ def test_appends_all_missing_scopes_before_order_by_and_limit() -> None:
 
     assert f"WHERE o.user_id = '{USER_ID}' AND oi.user_id = '{USER_ID}'" in scoped_sql
     assert scoped_sql.index("WHERE") < scoped_sql.index("ORDER BY")
+
+
+def test_join_keyword_is_not_treated_as_alias() -> None:
+    sql = f"""
+    SELECT customers.name, SUM(order_items.quantity * products.unit_price) AS order_value
+    FROM customers
+    JOIN orders ON orders.customer_id = customers.customer_id
+    JOIN order_items ON order_items.order_id = orders.order_id
+    JOIN products ON products.product_id = order_items.product_id
+    WHERE orders.user_id = '{USER_ID}'
+    GROUP BY customers.name
+    ORDER BY order_value DESC
+    LIMIT 5
+    """
+
+    scoped_sql = enforce_user_scope(sql, USER_ID, ALLOWED_TABLES)
+
+    assert "JOIN.user_id" not in scoped_sql
+    assert f"customers.user_id = '{USER_ID}'" in scoped_sql
+    assert f"order_items.user_id = '{USER_ID}'" in scoped_sql
+    assert f"products.user_id = '{USER_ID}'" in scoped_sql
+    assert scoped_sql.index("customers.user_id") < scoped_sql.index("GROUP BY")

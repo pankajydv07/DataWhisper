@@ -22,7 +22,7 @@ export function SessionList({
     <div className="space-y-6">
       {groups.map((group) => (
         <section key={group.label}>
-          <p className="mb-2 px-3 text-[11px] uppercase tracking-[0.24em] text-stone-500">
+          <p className="mb-2 px-3 text-[11px] uppercase tracking-[0.24em] text-paper-muted/[0.65]">
             {group.label}
           </p>
           <div className="space-y-1">
